@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Ember Dash — outrun the lava</title>
+<meta name="description" content="Ember Dash is an endless lava-runner on start.ng. Flee the eruption, leap the gaps, slide under the arches and grab every crystal with your own start.ng character.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a0f10'/%3E%3Cpath d='M16 5c3 4 7 7 7 13a7 7 0 1 1-14 0c0-3 1.5-5 3-7 .5 2 1.5 3 2.5 3.5C14 10 15 7 16 5z' fill='%23ff7a2f'/%3E%3Cpath d='M16 14c1.6 2 3.5 3.4 3.5 6.5a3.5 3.5 0 1 1-7 0c0-2.4 1.7-4.2 3.5-6.5z' fill='%23ffd15c'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<canvas id="game" aria-label="Ember Dash game area"></canvas>
+
+<div id="ui">
+  <!-- Player chip: face, character name, @account, sign-in -->
+  <div id="profile" class="chip" hidden>
+    <img id="player-face" alt="">
+    <div class="chip-text">
+      <b id="player-name">Runner</b>
+      <span id="player-account">Guest</span>
+    </div>
+    <button id="player-sign-in" hidden>Sign in</button>
+  </div>
+
+  <!-- In-run HUD -->
+  <div id="hud" class="hud" hidden>
+    <div class="hud-pill"><span class="hud-label">Distance</span><b id="hud-dist">0 m</b></div>
+    <div class="hud-pill"><span class="hud-label">Crystals</span><b id="hud-crystals">0</b></div>
+    <div class="hud-pill best" id="hud-best-pill" hidden><span class="hud-label">Best</span><b id="hud-best">0 m</b></div>
+    <div class="heat" title="How close the lava is"><div id="heat-bar"></div></div>
+  </div>
+
+  <button id="mute-btn" class="corner-btn" title="Sound on/off" aria-label="Toggle sound">&#128266;</button>
+
+  <!-- Touch controls -->
+  <div id="touch-controls" hidden>
+    <button id="btn-slide" class="touch-btn" aria-label="Slide">&#9660;<small>SLIDE</small></button>
+    <button id="btn-jump" class="touch-btn" aria-label="Jump">&#9650;<small>JUMP</small></button>
+  </div>
+
+  <!-- Title screen -->
+  <div id="title" class="overlay">
+    <h1 class="logo">EMBER<span>DASH</span></h1>
+    <p class="tagline">The mountain is awake. Run.</p>
+    <div class="how">
+      <span><kbd>Space</kbd>/<kbd>&uarr;</kbd>/<kbd>W</kbd> / tap &mdash; jump (twice to double-jump)</span>
+      <span><kbd>&darr;</kbd>/<kbd>S</kbd> / hold &mdash; slide under the arches</span>
+      <span>Leap the gaps. Grab crystals. Don&rsquo;t let the lava catch you.</span>
+    </div>
+    <button id="play-btn" class="big-btn">Play</button>
+    <div id="title-best" class="title-best" hidden></div>
+    <div id="title-board" class="board" hidden>
+      <h2>Leaderboard</h2>
+      <ol id="title-board-list"></ol>
+    </div>
+  </div>
+
+  <!-- Game over screen -->
+  <div id="gameover" class="overlay" hidden>
+    <h1 class="caught">CAUGHT BY THE LAVA</h1>
+    <div class="results">
+      <div class="result"><b id="result-dist">0 m</b><span>distance</span></div>
+      <div class="result"><b id="result-crystals">0</b><span>crystals</span></div>
+      <div class="result"><b id="result-best">0 m</b><span>your best</span></div>
+    </div>
+    <p id="save-message" class="save-message"></p>
+    <button id="again-btn" class="big-btn">Run again</button>
+    <p class="hint">or press <kbd>Space</kbd></p>
+    <div id="gameover-board" class="board" hidden>
+      <h2>Leaderboard</h2>
+      <ol id="gameover-board-list"></ol>
+    </div>
+  </div>
+
+  <!-- Pause screen -->
+  <div id="pause" class="overlay small" hidden>
+    <h1>PAUSED</h1>
+    <p class="hint">Press <kbd>P</kbd> to keep running</p>
+  </div>
+</div>
+
+<script src="./startng.js"></script>
+<script src="./game.js"></script>
+</body>
+</html>
