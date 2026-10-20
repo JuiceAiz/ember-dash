@@ -20,6 +20,9 @@
   let W = 0, H = 0, u = 1, dpr = 1; // u = scale unit (1 at 720px tall window)
 
   function resize() {
+    // a hidden webview can report 0×0; keep the last real size and let the
+    // frame loop retry until the window has a usable size
+    if (window.innerWidth < 2 || window.innerHeight < 2) return;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth;
     H = window.innerHeight;
@@ -51,6 +54,9 @@
     K.ventW = 26 * u; K.ventH = 32 * u;
     K.archW = 62 * u; K.archBottom = 26 * u; // clearance under the arch
     K.crystalR = 9 * u;
+    K.crystalGrab = 13 * u;  // generous padding around the runner's box
+    K.magnetR = 46 * u;      // crystals this close drift in, so grazes feel fair
+    K.magnetSpeed = 420 * u;
     K.lavaCatchUp = 1000 * u; // beyond this distance the lava hurries
     K.lavaMercy = 175 * u;    // closer than this the lava eases off
     K.figH = 44 * u;          // drawn character height
@@ -72,6 +78,8 @@
     particles: [], banners: [],
     gen: { x: 0, lastGap: false, sinceObstacle: 0 },
     milestone: 0,
+    run: { archesSlid: 0, unlocked: [] },  // per-run counters (achievements)
+    ach: {},                               // achievement id -> unlock time
     deathReason: '', dead: false, engulfedT: 0,
     best: { distance: 0, crystals: 0 },
     bestSource: 'you',
@@ -92,6 +100,82 @@
   }
   function saveBest() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S.best)); } catch (e) { /* ignore */ }
+  }
+
+  // ---------------------------------------------------------------- achievements
+  const ACH = [
+    { id: 'first_gem', icon: '\u{1F48E}', title: 'First Spark', desc: 'Grab a crystal' },
+    { id: 'dist100', icon: '\u{1F3C6}', title: 'Warming Up', desc: 'Run 100 m in a single run' },
+    { id: 'slide10', icon: '\u{1F3BC}', title: 'Slipstream', desc: 'Slide under 10 arches in one run' },
+    { id: 'slide25', icon: '\u{1F3C6}', title: 'Arch Master', desc: 'Slide under 25 arches in one run' },
+    { id: 'gems30', icon: '\u{1F48E}', title: 'Crystal Cache', desc: 'Grab 30 crystals in one run' },
+    { id: 'dist500', icon: '\u{1F3C6}', title: 'Long Haul', desc: 'Run 500 m in a single run' },
+    { id: 'dist1000', icon: '\u{1F525}', title: 'Marathon', desc: 'Run 1000 m in a single run' },
+    { id: 'fullspeed', icon: '\u{1F300}', title: 'Full Throttle', desc: 'Reach top speed' },
+    { id: 'hotheels', icon: '\u{2668}', title: 'Hot Heels', desc: 'Have the lava almost touch you' }
+  ];
+  const ACH_KEY = 'emberdash_ach_v1';
+  const achQueue = [];
+  let achTimer = 0;
+
+  function loadAchievements() {
+    try {
+      const raw = localStorage.getItem(ACH_KEY);
+      if (raw) {
+        const o = JSON.parse(raw);
+        if (o && typeof o === 'object') S.ach = o;
+      }
+    } catch (e) { /* storage may be unavailable */ }
+  }
+  function achDef(id) {
+    for (let i = 0; i < ACH.length; i++) if (ACH[i].id === id) return ACH[i];
+    return null;
+  }
+  function checkAchievement(id) {
+    if (S.ach[id]) return;
+    S.ach[id] = Date.now();
+    try { localStorage.setItem(ACH_KEY, JSON.stringify(S.ach)); } catch (e) { /* ignore */ }
+    if (S.run.unlocked.indexOf(id) < 0) S.run.unlocked.push(id);
+    achQueue.push(id);
+    Sound.achievement();
+    renderAchievements();
+  }
+  function renderAchievements() {
+    const grid = $('ach-grid');
+    if (!grid) return;
+    let got = 0;
+    for (let i = 0; i < ACH.length; i++) if (S.ach[ACH[i].id]) got++;
+    $('ach-count').textContent = got + '/' + ACH.length;
+    grid.replaceChildren.apply(grid, ACH.map(function (a) {
+      const el = document.createElement('div');
+      el.className = 'ach-item' + (S.ach[a.id] ? ' got' : '');
+      el.innerHTML = '<span class="ach-icon">' + a.icon + '</span><div><b></b><small></small></div>';
+      el.querySelector('b').textContent = a.title;
+      el.querySelector('small').textContent = a.desc;
+      return el;
+    }));
+    $('title-ach').hidden = false;
+  }
+  function pumpAchToast() {
+    if (achTimer > 0 || !achQueue.length) return;
+    const a = achDef(achQueue.shift());
+    if (!a) { pumpAchToast(); return; }
+    const toast = $('ach-toast');
+    $('ach-toast-icon').textContent = a.icon;
+    $('ach-toast-title').textContent = a.title;
+    $('ach-toast-desc').textContent = a.desc;
+    toast.hidden = false;
+    toast.classList.remove('show');
+    void toast.offsetWidth; // restart the slide-in animation
+    toast.classList.add('show');
+    achTimer = 2.8;
+  }
+  function refreshTitleBest() {
+    const el = $('title-best');
+    if (S.best.distance > 0) {
+      el.hidden = false;
+      el.textContent = 'Best: ' + S.best.distance + ' m \u00B7 ' + S.best.crystals + ' crystals';
+    }
   }
 
   // ---------------------------------------------------------------- audio
@@ -156,7 +240,8 @@
     milestone() { Sound.env(660, 0.12, 'triangle', 0.2); setTimeout(function () { Sound.env(990, 0.18, 'triangle', 0.2); }, 110); },
     surge() { Sound.env(90, 0.7, 'sawtooth', 0.18, 220); },
     death() { Sound.noise(0.6, 0.35, 250); Sound.env(300, 0.7, 'sawtooth', 0.2, 50); },
-    best() { [523, 659, 784, 1046].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.22, 'triangle', 0.18); }, i * 120); }); }
+    best() { [523, 659, 784, 1046].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.22, 'triangle', 0.18); }, i * 120); }); },
+    achievement() { [784, 988, 1318, 1568].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.15, 'triangle', 0.15); }, i * 85); }); }
   };
   try { Sound.muted = localStorage.getItem('emberdash_muted') === '1'; } catch (e) { /* ignore */ }
 
@@ -226,7 +311,12 @@
   window.addEventListener('resize', resize);
 
   // ---------------------------------------------------------------- world generation
-  function difficulty() { return clamp(S.dist / 1600, 0, 1); } // 0..1 over 1600 m
+  // 0..1. Flat while the run warms up, then a smooth ramp to full pace at ~2000 m:
+  // start small, get brutal.
+  function difficulty() {
+    const raw = clamp((S.dist - 250) / 1750, 0, 1);
+    return raw * raw * (3 - 2 * raw);
+  }
 
   function generate() {
     const gen = S.gen;
@@ -237,9 +327,9 @@
       const platW = rand(lerp(200, 320, d), lerp(380, 620, d)) * u;
       const plat = { x: gen.x, w: platW };
       S.platforms.push(plat);
-      // obstacles inside the platform
+      // obstacles inside the platform — none during the warm-up stretch
       const margin = 90 * u + K.playerW;
-      if (gen.sinceObstacle > lerp(420, 240, d) * u && platW > 320 * u && Math.random() < lerp(0.55, 0.9, d)) {
+      if (d > 0.05 && gen.sinceObstacle > lerp(520, 240, d) * u && platW > 320 * u && Math.random() < lerp(0.5, 0.92, d)) {
         const ox = gen.x + rand(margin, platW - margin);
         const type = Math.random() < (0.55 - 0.25 * d) ? 'vent' : 'arch';
         if (type === 'vent') {
@@ -252,33 +342,49 @@
       } else {
         gen.sinceObstacle += platW;
       }
-      // crystals over the platform
-      if (Math.random() < 0.8) {
-        const n = randInt(3, 6);
-        const startX = gen.x + rand(margin * 0.5, platW - n * 34 * u - margin * 0.5);
+      // crystals over the platform — a low row you sweep up while running,
+      // or an arc you grab with one jump
+      if (Math.random() < 0.85) {
+        const maxN = clamp(Math.floor((platW - margin) / (34 * u)), 2, 6);
+        const n = Math.min(randInt(3, 6), maxN);
+        const startX = gen.x + rand(margin * 0.5, Math.max(margin * 0.5, platW - (n - 1) * 34 * u - margin * 0.5));
         const arc = Math.random() < 0.5;
+        const spd = Math.max(S.speed, K.speed0);
         for (let i = 0; i < n; i++) {
           const t = n > 1 ? i / (n - 1) : 0.5;
-          const lift = arc ? Math.sin(t * Math.PI) * 90 * u : 0;
-          S.gems.push({ x: startX + i * 34 * u, y: K.groundY - (60 + lift) * u, got: false, phase: rand(0, 6.28) });
+          let lift = 0;
+          if (arc) {
+            // follow the path a jump traces from the start of the row, so the
+            // arc sits at body height all the way through the leap
+            const tau = (i * 34 * u) / spd;
+            const feet = K.jumpV * tau - 0.5 * K.grav * tau * tau;
+            lift = clamp(feet - 18 * u, 0, 166 * u);
+          }
+          const y = K.groundY - (34 * u + lift);
+          S.gems.push({ x: startX + i * 34 * u, y: y, baseY: y, got: false, phase: rand(0, 6.28) });
         }
       }
       gen.x += platW;
       // gap
-      const gapChance = lerp(0.5, 0.95, d);
+      const gapChance = lerp(0.28, 0.95, d);
       if (Math.random() < gapChance) {
         const speed = Math.max(S.speed, K.speed0);
-        const wide = d > 0.25 && Math.random() < lerp(0.1, 0.28, d);
+        const wide = d > 0.3 && Math.random() < lerp(0.08, 0.28, d);
         const gapW = wide
           ? rand(0.72, K.wideGapFactor) * speed
-          : rand(0.34, K.maxGapFactor) * speed;
+          : rand(0.3, K.maxGapFactor * lerp(0.78, 1, d)) * speed;
         gen.x += gapW;
-        // crystals arcing over the gap
+        // crystals arcing over the gap — laid along the line an edge-timed
+        // jump traces, so one well-timed leap sweeps the whole arc
         if (Math.random() < 0.85) {
           const n = randInt(3, 5);
+          const spd = Math.max(S.speed, K.speed0);
           for (let i = 0; i < n; i++) {
             const t = n > 1 ? (i + 0.5) / n : 0.5;
-            S.gems.push({ x: gen.x - gapW + gapW * t, y: K.groundY - (70 + Math.sin(t * Math.PI) * 120) * u, got: false, phase: rand(0, 6.28) });
+            const tau = (gapW * t) / spd;
+            const feet = K.jumpV * tau - 0.5 * K.grav * tau * tau;
+            const y = K.groundY - clamp(feet - 18 * u, 50 * u, 200 * u);
+            S.gems.push({ x: gen.x - gapW + gapW * t, y: y, baseY: y, got: false, phase: rand(0, 6.28) });
           }
         }
         gen.sinceObstacle += gapW;
@@ -355,12 +461,13 @@
     S.speed = S.speedBase = K.speed0;
     S.boostStacks = 0; S.boostTimer = 0;
     S.dist = 0; S.crystals = 0; S.milestone = 0;
+    S.run = { archesSlid: 0, unlocked: [] };
     S.platforms = [{ x: -600 * u, w: 2600 * u }];
     S.vents = []; S.arches = []; S.gems = []; S.particles = []; S.banners = [];
     S.gen = { x: 2000 * u, lastGap: false, sinceObstacle: 999 };
     S.player = { x: 120 * u, y: K.groundY, vy: 0, onGround: true, jumps: 0, sliding: false, rot: 0, tumble: false, stumble: 0 };
     S.lavaX = S.player.x - 1150 * u;
-    S.lavaSurge = 0; S.lavaSurgeT = 0; S.lavaNextSurge = rand(8, 12); S.lavaWarn = 0;
+    S.lavaSurge = 0; S.lavaSurgeT = 0; S.lavaNextSurge = rand(17, 25); S.lavaWarn = 0; // first surge comes late
     S.camX = S.player.x - W * 0.3;
     S.shake = 0; S.dead = false; S.deathReason = ''; S.engulfedT = 0;
     S.saveState = 'idle'; S.saveText = ''; S.saveWarn = false;
@@ -384,10 +491,18 @@
     const distance = Math.floor(S.dist);
     const crystals = Math.floor(S.crystals);
     const isNewBest = distance > S.best.distance;
-    if (isNewBest) { S.best = { distance: distance, crystals: crystals }; saveBest(); }
+    if (isNewBest) { S.best = { distance: distance, crystals: crystals }; saveBest(); refreshTitleBest(); }
     $('result-dist').textContent = distance + ' m';
     $('result-crystals').textContent = String(crystals);
     $('result-best').textContent = S.best.distance + ' m';
+    const achRun = $('ach-run');
+    if (S.run.unlocked.length) {
+      achRun.hidden = false;
+      achRun.textContent = 'Achievement' + (S.run.unlocked.length > 1 ? 's' : '') + ' unlocked: ' +
+        S.run.unlocked.map(function (id) { const a = achDef(id); return a ? a.title : id; }).join(', ');
+    } else {
+      achRun.hidden = true;
+    }
     $('gameover').hidden = false;
     if (isNewBest) Sound.best();
     refreshBoard();
@@ -413,6 +528,7 @@
       if (r.stats && typeof r.stats.distance === 'number' && r.stats.distance > S.best.distance) {
         S.best = { distance: r.stats.distance, crystals: r.stats.crystals || 0 };
         saveBest();
+        refreshTitleBest();
         $('result-best').textContent = S.best.distance + ' m';
       }
       refreshBoard();
@@ -472,6 +588,12 @@
   function update(dt) {
     S.t += dt;
     S.titleBob += dt;
+    // achievement toast: shows for a beat, then the next one
+    if (achTimer > 0) {
+      achTimer -= dt;
+      if (achTimer <= 0) { achTimer = 0; $('ach-toast').hidden = true; }
+    }
+    pumpAchToast();
     if (S.mode === 'title') {
       updateParticles(dt);
       if (Math.random() < 0.35) spawnEmbers(1);
@@ -483,8 +605,9 @@
     const P = S.player;
 
     if (S.mode === 'playing') {
-      // speed: grows over time, small boost from crystals
-      S.speedBase = Math.min(S.speedBase + K.speedAccel * dt, K.speedMax);
+      // speed: flat through the warm-up, then grows with distance; crystals boost
+      const warm = clamp((S.dist - 150) / 260, 0, 1);
+      S.speedBase = Math.min(S.speedBase + K.speedAccel * warm * dt, K.speedMax);
       if (S.boostTimer > 0) {
         S.boostTimer -= dt;
         if (S.boostTimer <= 0 && S.boostStacks > 0) S.boostStacks--;
@@ -544,19 +667,47 @@
       for (let i = 0; i < S.arches.length; i++) {
         const a = S.arches[i];
         const bottom = K.groundY - K.archBottom;
-        if (box.x < a.x + a.w && box.x + box.w > a.x && box.y < bottom) { die('arch'); break; }
+        const overlaps = box.x < a.x + a.w && box.x + box.w > a.x;
+        if (overlaps && box.y < bottom) { die('arch'); break; }
+        if (!a.counted) {
+          if (overlaps && P.sliding) a.sawSlide = true;
+          if (box.x > a.x + a.w) { // the arch is behind us: a clean pass
+            a.counted = true;
+            if (a.sawSlide) {
+              S.run.archesSlid++;
+              if (S.run.archesSlid >= 10) checkAchievement('slide10');
+              if (S.run.archesSlid >= 25) checkAchievement('slide25');
+            }
+          }
+        }
       }
-      // crystals
+      // crystals: circle vs the runner's whole body, plus a gentle magnet so
+      // grazes and mid-air passes collect them the way they look like they should
       for (let i = 0; i < S.gems.length; i++) {
         const gm = S.gems[i];
         if (gm.got) continue;
-        const dx = gm.x - P.x, dy = (gm.y) - (P.y - ph * 0.55);
-        if (dx * dx + dy * dy < (K.crystalR + 16 * u) * (K.crystalR + 16 * u)) {
+        gm.y = gm.baseY + Math.sin(S.t * 2.4 + gm.phase) * 4 * u;
+        let ox = 0, oy = 0; // distance from the gem to the nearest face of the box
+        if (gm.x < box.x) ox = box.x - gm.x; else if (gm.x > box.x + box.w) ox = gm.x - (box.x + box.w);
+        if (gm.y < box.y) oy = box.y - gm.y; else if (gm.y > box.y + box.h) oy = gm.y - (box.y + box.h);
+        const grab = K.crystalR + K.crystalGrab;
+        if (ox * ox + oy * oy < grab * grab) {
           gm.got = true;
           S.crystals++;
           S.boostTimer = 2.6; S.boostStacks = Math.min(S.boostStacks + 1, 3);
           Sound.gem();
           spawnBurst(gm.x, gm.y, '#7df9ff', 10, 150);
+          checkAchievement('first_gem');
+          if (S.crystals >= 30) checkAchievement('gems30');
+          continue;
+        }
+        const dist = Math.sqrt(ox * ox + oy * oy);
+        if (dist > 0 && dist < K.magnetR) {
+          const step = Math.min(K.magnetSpeed * dt, dist);
+          const k = step / dist;
+          gm.x += (gm.x < box.x ? ox : -ox) * k; // drift toward the runner
+          gm.y += (gm.y < box.y ? oy : -oy) * k * 0.6;
+          gm.baseY = gm.y;
         }
       }
 
@@ -571,6 +722,12 @@
         Sound.surge();
       }
       const gapAhead = P.x - S.lavaX;
+      // achievements that watch the whole run
+      if (S.dist >= 100) checkAchievement('dist100');
+      if (S.dist >= 500) checkAchievement('dist500');
+      if (S.dist >= 1000) checkAchievement('dist1000');
+      if (S.speedBase >= K.speedMax * 0.995) checkAchievement('fullspeed');
+      if (gapAhead < 150 * u) checkAchievement('hotheels');
       let lavaSpeed = S.speed * 0.955;
       if (gapAhead > K.lavaCatchUp) lavaSpeed += 55 * u;
       if (gapAhead < K.lavaMercy) lavaSpeed -= 45 * u;
@@ -864,7 +1021,7 @@
     ctx.fillRect(0, 0, W, H);
 
     // sun
-    const sunX = W * 0.72 - cam * 0.02 % W, sunY = H * 0.34;
+    const sunX = W * 0.72 - (cam * 0.02) % (W || 1), sunY = H * 0.34;
     const sunGrad = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 220 * u);
     sunGrad.addColorStop(0, 'rgba(255,214,140,.95)');
     sunGrad.addColorStop(0.25, 'rgba(255,160,80,.55)');
@@ -1063,7 +1220,7 @@
     function drawGem(g, cam2, time) {
       const x = g.x - cam2;
       if (x < -40 || x > W + 40) return;
-      const y = g.y + Math.sin(time * 2.4 + g.phase) * 4 * u;
+      const y = g.y; // bob is applied in update(), so the hitbox matches what you see
       const r = K.crystalR;
       ctx.save();
       ctx.translate(x, y);
@@ -1234,7 +1391,8 @@
 
   // ---------------------------------------------------------------- loop
   function frame(now) {
-    const dt = Math.min((now - lastT) / 1000 || 0, 0.05);
+    if (!W || !H) resize(); // recovered from a hidden 0×0 boot
+    const dt = clamp((now - lastT) / 1000 || 0, 0, 0.05);
     lastT = now;
     update(dt);
     render();
@@ -1266,15 +1424,21 @@
 
   // ---------------------------------------------------------------- boot
   loadBest();
+  loadAchievements();
   resize();
   physics();
   S.player = { x: W * 0.32, y: K.groundY, vy: 0, onGround: true, jumps: 0, sliding: false, rot: 0, tumble: false, stumble: 0 };
   S.lavaX = S.player.x - 1150 * u;
   S.camX = 0;
   S.platforms = [{ x: -W, w: W * 3 }];
-  if (S.best.distance > 0) {
-    $('title-best').hidden = false;
-    $('title-best').textContent = 'Best: ' + S.best.distance + ' m · ' + S.best.crystals + ' crystals';
+  refreshTitleBest();
+  renderAchievements();
+  if (/(?:\?|&)debug=1/.test(location.search)) {
+    // diagnostics only: lets tests drive the simulation frame by frame
+    window.__ED = {
+      S: S, K: function () { return K; }, difficulty: difficulty, ACH: ACH,
+      step: function (dt) { update(dt); render(); }
+    };
   }
   requestAnimationFrame(frame);
 

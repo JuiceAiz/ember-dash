@@ -49,6 +49,10 @@
     </div>
     <button id="play-btn" class="big-btn">Play</button>
     <div id="title-best" class="title-best" hidden></div>
+    <div id="title-ach" class="ach-panel" hidden>
+      <h2>Achievements <span id="ach-count"></span></h2>
+      <div id="ach-grid" class="ach-grid"></div>
+    </div>
     <div id="title-board" class="board" hidden>
       <h2>Leaderboard</h2>
       <ol id="title-board-list"></ol>
@@ -64,12 +68,19 @@
       <div class="result"><b id="result-best">0 m</b><span>your best</span></div>
     </div>
     <p id="save-message" class="save-message"></p>
+    <p id="ach-run" class="ach-run" hidden></p>
     <button id="again-btn" class="big-btn">Run again</button>
     <p class="hint">or press <kbd>Space</kbd></p>
     <div id="gameover-board" class="board" hidden>
       <h2>Leaderboard</h2>
       <ol id="gameover-board-list"></ol>
     </div>
+  </div>
+
+  <!-- Achievement toast -->
+  <div id="ach-toast" class="ach-toast" hidden>
+    <span id="ach-toast-icon" class="ach-toast-icon">&#9733;</span>
+    <div class="ach-toast-text"><b id="ach-toast-title"></b><small id="ach-toast-desc"></small></div>
   </div>
 
   <!-- Pause screen -->
