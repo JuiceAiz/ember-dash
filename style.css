@@ -53,6 +53,10 @@ html, body {
 .hud-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; opacity: .6; }
 .hud-pill b { font-size: 20px; font-variant-numeric: tabular-nums; }
 .hud-pill.best b { color: #ffd15c; }
+.hud-pill.hearts { align-items: center; }
+#hud-hearts { font-size: 17px; letter-spacing: .1em; line-height: 1.25; }
+#hud-hearts .h { color: rgba(255, 246, 234, .16); transition: color .18s ease; }
+#hud-hearts .h.on { color: #ff5d4a; text-shadow: 0 0 9px rgba(255, 90, 70, .65); }
 .heat { width: 74px; height: 10px; border-radius: 999px; background: rgba(0, 0, 0, .5); border: 1px solid rgba(255, 170, 90, .25); overflow: hidden; }
 #heat-bar { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #ffd15c, #ff7a2f 55%, #ff3b2f); transition: width .15s linear; }
 
@@ -83,6 +87,34 @@ html, body {
 .overlay > * { pointer-events: auto; }
 .overlay[hidden] { display: none; }
 .overlay.small h1 { font-size: 42px; letter-spacing: .1em; }
+.overlay.dim { background: rgba(12, 6, 8, .6); backdrop-filter: blur(3px); }
+
+/* ---------- revive (Phoenix) ---------- */
+.phoenix {
+  font-size: clamp(30px, 7.5vw, 58px); font-weight: 900; letter-spacing: .06em;
+  background: linear-gradient(180deg, #ffe9b3 5%, #ffb347 55%, #ff5d2f 95%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 6px 26px rgba(255, 110, 40, .5));
+}
+.revive-offer { font-size: clamp(15px, 3vw, 19px); }
+.revive-offer b { color: #ffd15c; }
+.gem-ico { font-style: normal; }
+.revive-clock {
+  font-size: clamp(44px, 10vw, 68px); font-weight: 900; line-height: 1;
+  color: #ffd15c; font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 30px rgba(255, 200, 80, .5);
+  animation: clockPulse 1s ease-in-out infinite;
+}
+@keyframes clockPulse {
+  0%, 100% { transform: scale(1); opacity: .85; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+.ghost-btn {
+  border: 1px solid rgba(255, 170, 90, .4); background: rgba(26, 22, 20, .72);
+  color: #fff6ea; padding: 11px 36px; border-radius: 999px;
+  font-size: 16px; font-weight: 800; letter-spacing: .04em; cursor: pointer;
+}
+.ghost-btn:hover { background: rgba(64, 42, 30, .85); transform: translateY(-1px); }
 
 .logo {
   font-size: clamp(44px, 11vw, 96px); font-weight: 900; letter-spacing: .04em; line-height: .95;
@@ -181,8 +213,11 @@ kbd {
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
+#pause-btn { left: 66px; }
+
 @media (pointer: coarse) {
   .corner-btn { top: 14px; bottom: auto; right: 14px; left: auto; }
+  #pause-btn { right: 66px; left: auto; }
 }
 
 @media (max-width: 640px) {

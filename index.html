@@ -24,6 +24,7 @@
 
   <!-- In-run HUD -->
   <div id="hud" class="hud" hidden>
+    <div class="hud-pill hearts" title="Ember hearts — hazards cost one, only the lava ends you"><span class="hud-label">Life</span><b id="hud-hearts"></b></div>
     <div class="hud-pill"><span class="hud-label">Distance</span><b id="hud-dist">0 m</b></div>
     <div class="hud-pill"><span class="hud-label">Crystals</span><b id="hud-crystals">0</b></div>
     <div class="hud-pill best" id="hud-best-pill" hidden><span class="hud-label">Best</span><b id="hud-best">0 m</b></div>
@@ -31,6 +32,7 @@
   </div>
 
   <button id="mute-btn" class="corner-btn" title="Sound on/off" aria-label="Toggle sound">&#128266;</button>
+  <button id="pause-btn" class="corner-btn" title="Pause" aria-label="Pause game" hidden>&#9208;</button>
 
   <!-- Touch controls -->
   <div id="touch-controls" hidden>
@@ -46,6 +48,7 @@
       <span><kbd>Space</kbd>/<kbd>&uarr;</kbd>/<kbd>W</kbd> / tap &mdash; jump (twice to double-jump)</span>
       <span><kbd>&darr;</kbd>/<kbd>S</kbd> / hold &mdash; slide under the arches</span>
       <span>Leap the gaps. Grab crystals. Don&rsquo;t let the lava catch you.</span>
+      <span>Three hearts shield you &middot; die, and spend crystals to rise again &middot; pause anytime with <kbd>P</kbd> or the &#9208; button</span>
     </div>
     <button id="play-btn" class="big-btn">Play</button>
     <div id="title-best" class="title-best" hidden></div>
@@ -83,10 +86,21 @@
     <div class="ach-toast-text"><b id="ach-toast-title"></b><small id="ach-toast-desc"></small></div>
   </div>
 
+  <!-- Revive offer (Phoenix) -->
+  <div id="revive" class="overlay small dim" hidden>
+    <h1 class="phoenix">PHOENIX DOWN</h1>
+    <p class="revive-offer">The lava got you. Spend <b id="revive-cost">15</b> <span class="gem-ico">&#128142;</span> to rise again?</p>
+    <div class="revive-clock" id="revive-count">3</div>
+    <button id="revive-btn" class="big-btn">Revive</button>
+    <button id="giveup-btn" class="ghost-btn">End run</button>
+    <p class="hint">You&rsquo;re carrying <b id="revive-have">0</b> <span class="gem-ico">&#128142;</span></p>
+  </div>
+
   <!-- Pause screen -->
-  <div id="pause" class="overlay small" hidden>
+  <div id="pause" class="overlay small dim" hidden>
     <h1>PAUSED</h1>
-    <p class="hint">Press <kbd>P</kbd> to keep running</p>
+    <button id="resume-btn" class="big-btn">Resume</button>
+    <p class="hint">Press <kbd>P</kbd> / <kbd>Esc</kbd> or tap Resume</p>
   </div>
 </div>
 

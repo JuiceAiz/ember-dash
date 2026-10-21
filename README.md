@@ -7,11 +7,21 @@ platforms: leap the gaps, slide under the basalt arches, dodge the flame vents
 and grab every crystal. Crystals give you a small speed burst, the lava surges
 now and then, and the further you get the faster it all goes.
 
+You carry three **ember hearts**. Clipping an arch or a flame vent costs one,
+and falling into a gap costs one too (you get slapped onto the next platform) —
+only the lava itself, or an empty heart bar, ends the run. Rare Ember Hearts
+float at jump height and restore what you lost.
+
+When the lava does catch you, the **Phoenix** offers a way back: spend
+crystals (15, then 40, 100, 250 — up to four times a run) to rise again with
+full hearts and the lava blasted far behind. Score or survival, your call.
+
 The run warms up slowly — the first few hundred metres are gentle, then gaps,
 arches and vents grow denser and faster until around 2 km, when it is full pace.
-Along the way you can unlock nine achievements, like *Slipstream* (slide under
-10 arches in one run), *Crystal Cache* (30 crystals in one run) and *Marathon*
-(run 1000 m).
+Along the way you can unlock twelve achievements, like *Slipstream* (slide under
+10 arches in one run), *Untouchable* (run 500 m without losing a heart),
+*Phoenix* (rise from the lava) and *Marathon* (run 1000 m). Pause any time with
+`P`, `Esc` or the ⏸ button.
 
 ## Play
 
@@ -24,7 +34,7 @@ file server.
 | --- | --- |
 | Jump (twice = double-jump) | `Space`, `↑`, `W`, or tap / JUMP button |
 | Slide | hold `↓`, `S`, or the SLIDE button |
-| Pause | `P` or `Esc` |
+| Pause / resume | `P`, `Esc`, or the ⏸ / ▶ button |
 | Mute | `M` or the speaker button |
 
 ## How it works

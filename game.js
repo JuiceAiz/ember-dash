@@ -14,6 +14,9 @@
   const randInt = function (a, b) { return Math.floor(rand(a, b + 1)); };
   const pick = function (arr) { return arr[Math.floor(Math.random() * arr.length)]; };
 
+  const MAX_HEARTS = 3;
+  const REVIVE_COSTS = [15, 40, 100, 250]; // crystal price of rising again, escalating per run
+
   // ---------------------------------------------------------------- canvas
   const canvas = $('game');
   const ctx = canvas.getContext('2d');
@@ -64,17 +67,22 @@
 
   // ---------------------------------------------------------------- state
   const S = {
-    mode: 'title',          // title | playing | dying | gameover
+    mode: 'title',          // title | playing | dying | revive | gameover
     paused: false,
     t: 0,
     speed: 0, speedBase: 0, boostStacks: 0, boostTimer: 0,
     dist: 0,                // metres run
     crystals: 0,
+    hearts: MAX_HEARTS,     // ember hearts — hazards cost one
+    invuln: 0,              // seconds of i-frames after a hit
+    hitDist: 0,             // distance at the last hit (Untouchable streak)
+    hurtFlash: 0,           // red damage vignette, decays
+    revives: 0, reviveT: 0, // Phoenix revive: uses and countdown
     camX: 0,
     shake: 0,
     player: { x: 0, y: 0, vy: 0, onGround: true, jumps: 0, sliding: false, rot: 0, tumble: false, stumble: 0 },
     lavaX: 0, lavaSurge: 0, lavaSurgeT: 0, lavaNextSurge: 0, lavaWarn: 0,
-    platforms: [], vents: [], arches: [], gems: [],
+    platforms: [], vents: [], arches: [], gems: [], hpickups: [],
     particles: [], banners: [],
     gen: { x: 0, lastGap: false, sinceObstacle: 0 },
     milestone: 0,
@@ -112,7 +120,10 @@
     { id: 'dist500', icon: '\u{1F3C6}', title: 'Long Haul', desc: 'Run 500 m in a single run' },
     { id: 'dist1000', icon: '\u{1F525}', title: 'Marathon', desc: 'Run 1000 m in a single run' },
     { id: 'fullspeed', icon: '\u{1F300}', title: 'Full Throttle', desc: 'Reach top speed' },
-    { id: 'hotheels', icon: '\u{2668}', title: 'Hot Heels', desc: 'Have the lava almost touch you' }
+    { id: 'hotheels', icon: '\u{2668}', title: 'Hot Heels', desc: 'Have the lava almost touch you' },
+    { id: 'warmglow', icon: '\u{2764}\u{FE0F}', title: 'Warm Glow', desc: 'Pick up an Ember Heart' },
+    { id: 'untouchable', icon: '\u{1F6E1}\u{FE0F}', title: 'Untouchable', desc: 'Run 500 m without losing a heart' },
+    { id: 'phoenix', icon: '\u{1F426}', title: 'Phoenix', desc: 'Spend crystals to rise from the lava' }
   ];
   const ACH_KEY = 'emberdash_ach_v1';
   const achQueue = [];
@@ -241,7 +252,10 @@
     surge() { Sound.env(90, 0.7, 'sawtooth', 0.18, 220); },
     death() { Sound.noise(0.6, 0.35, 250); Sound.env(300, 0.7, 'sawtooth', 0.2, 50); },
     best() { [523, 659, 784, 1046].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.22, 'triangle', 0.18); }, i * 120); }); },
-    achievement() { [784, 988, 1318, 1568].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.15, 'triangle', 0.15); }, i * 85); }); }
+    achievement() { [784, 988, 1318, 1568].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.15, 'triangle', 0.15); }, i * 85); }); },
+    hurt() { Sound.noise(0.3, 0.3, 160); Sound.env(240, 0.35, 'sawtooth', 0.16, 70); },
+    heart() { [784, 1046, 1318].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.16, 'triangle', 0.16); }, i * 80); }); },
+    revive() { [392, 523, 659, 784, 1046].forEach(function (f, i) { setTimeout(function () { Sound.env(f, 0.26, 'triangle', 0.2); }, i * 95); }); }
   };
   try { Sound.muted = localStorage.getItem('emberdash_muted') === '1'; } catch (e) { /* ignore */ }
 
@@ -294,6 +308,8 @@
     if (S.mode !== 'playing' && S.mode !== 'paused') return;
     S.paused = !S.paused;
     $('pause').hidden = !S.paused;
+    $('pause-btn').innerHTML = S.paused ? '&#9654;' : '&#9208;';
+    $('pause-btn').setAttribute('aria-label', S.paused ? 'Resume game' : 'Pause game');
   }
   function toggleMute() {
     Sound.ensure();
@@ -302,6 +318,10 @@
   }
   $('mute-btn').innerHTML = Sound.muted ? '&#128263;' : '&#128266;';
   $('mute-btn').addEventListener('click', toggleMute);
+  $('pause-btn').addEventListener('click', function () { Sound.ensure(); togglePause(); });
+  $('resume-btn').addEventListener('click', function () { Sound.ensure(); togglePause(); });
+  $('revive-btn').addEventListener('click', function () { Sound.ensure(); doRevive(); });
+  $('giveup-btn').addEventListener('click', function () { Sound.ensure(); endRun(); });
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden && S.mode === 'playing' && !S.paused) togglePause();
@@ -329,7 +349,9 @@
       S.platforms.push(plat);
       // obstacles inside the platform — none during the warm-up stretch
       const margin = 90 * u + K.playerW;
+      let hadObs = false;
       if (d > 0.05 && gen.sinceObstacle > lerp(520, 240, d) * u && platW > 320 * u && Math.random() < lerp(0.5, 0.92, d)) {
+        hadObs = true;
         const ox = gen.x + rand(margin, platW - margin);
         const type = Math.random() < (0.55 - 0.25 * d) ? 'vent' : 'arch';
         if (type === 'vent') {
@@ -363,6 +385,15 @@
           const y = K.groundY - (34 * u + lift);
           S.gems.push({ x: startX + i * 34 * u, y: y, baseY: y, got: false, phase: rand(0, 6.28) });
         }
+      }
+      // a rare Ember Heart on obstacle-free platforms — sometimes on the ground
+      // row, often at jump height so reaching it takes a leap
+      if (!hadObs && S.hpickups.length < 3 && Math.random() < 0.11) {
+        const mid = Math.random() < 0.65;
+        const hx = gen.x + rand(margin * 0.7, Math.max(margin * 0.7, platW - margin * 0.7));
+        const hy = K.groundY - (mid ? rand(70, 118) : 40) * u;
+        const clash = S.gems.some(function (gm) { return Math.abs(gm.x - hx) < 40 * u && Math.abs(gm.y - hy) < 38 * u; });
+        if (!clash) S.hpickups.push({ x: hx, y: hy, baseY: hy, got: false, phase: rand(0, 6.28) });
       }
       gen.x += platW;
       // gap
@@ -399,6 +430,7 @@
     S.vents = S.vents.filter(function (p) { return p.x + p.w > cull; });
     S.arches = S.arches.filter(function (p) { return p.x + p.w > cull; });
     S.gems = S.gems.filter(function (p) { return !p.got && p.x > cull; });
+    S.hpickups = S.hpickups.filter(function (p) { return !p.got && p.x > cull; });
   }
 
   function groundAt(x) {
@@ -461,9 +493,13 @@
     S.speed = S.speedBase = K.speed0;
     S.boostStacks = 0; S.boostTimer = 0;
     S.dist = 0; S.crystals = 0; S.milestone = 0;
+    S.hearts = MAX_HEARTS; S.invuln = 0; S.hitDist = 0; S.hurtFlash = 0;
+    S.revives = 0; S.reviveT = 0;
+    $('revive').hidden = true;
+    $('pause-btn').hidden = false; $('pause-btn').innerHTML = '&#9208;';
     S.run = { archesSlid: 0, unlocked: [] };
     S.platforms = [{ x: -600 * u, w: 2600 * u }];
-    S.vents = []; S.arches = []; S.gems = []; S.particles = []; S.banners = [];
+    S.vents = []; S.arches = []; S.gems = []; S.hpickups = []; S.particles = []; S.banners = [];
     S.gen = { x: 2000 * u, lastGap: false, sinceObstacle: 999 };
     S.player = { x: 120 * u, y: K.groundY, vy: 0, onGround: true, jumps: 0, sliding: false, rot: 0, tumble: false, stumble: 0 };
     S.lavaX = S.player.x - 1150 * u;
@@ -478,6 +514,7 @@
   function die(reason) {
     if (S.mode !== 'playing') return;
     S.mode = 'dying';
+    $('pause-btn').hidden = true;
     S.deathReason = reason;
     S.shake = 16 * u;
     Sound.death();
@@ -486,8 +523,97 @@
   }
 
   function finishDeath() {
+    // the crystals you're carrying can buy one more life
+    if (canRevive()) { offerRevive(); return; }
+    endRun();
+  }
+
+  // A hit costs one ember heart. With no hearts left, the hazard is fatal —
+  // only a heart bar (or the lava itself) can end the run.
+  function hurt(reason) {
+    if (S.mode !== 'playing' || S.invuln > 0) return false;
+    S.hearts = Math.max(0, S.hearts - 1);
+    S.hitDist = S.dist;
+    S.invuln = 1.6;
+    S.hurtFlash = 1;
+    S.shake = Math.max(S.shake, 15 * u);
+    Sound.hurt();
+    spawnBurst(S.player.x, S.player.y - K.playerH * 0.5, '#ff5d4a', 14, 240);
+    if (S.hearts <= 0) { die(reason); return true; }
+    updateHud();
+    return true;
+  }
+
+  // Falling into a gap costs a heart and slaps you onto the next platform;
+  // only an empty heart bar down there is fatal.
+  function rescueFromPit() {
+    hurt('fall');
+    if (S.mode !== 'playing') return; // out of hearts: let the death play out
+    const P = S.player;
+    let safe = null;
+    for (let i = 0; i < S.platforms.length; i++) {
+      const p = S.platforms[i];
+      if (p.x > P.x) { safe = p; break; }
+    }
+    if (!safe) { die('fall'); return; }
+    P.x = safe.x + 34 * u;
+    P.y = K.groundY; P.vy = 0; P.onGround = true; P.jumps = 0; P.sliding = false; P.tumble = false;
+    if (P.x - S.lavaX < 420 * u) S.lavaX = P.x - 420 * u; // mercy shove, invisible on screen
+    spawnDust(P.x, P.y);
+    S.banners.push({ text: 'SAVED!', age: 0, life: 1.1, y: H * 0.34 });
+  }
+
+  // ------------------------------------------------------------ Phoenix revive
+  function reviveCost() { return REVIVE_COSTS[Math.min(S.revives, REVIVE_COSTS.length - 1)]; }
+  function canRevive() { return S.revives < REVIVE_COSTS.length && S.crystals >= reviveCost(); }
+
+  function offerRevive() {
+    S.mode = 'revive';
+    S.reviveT = 3;
+    $('revive-cost').textContent = reviveCost();
+    $('revive-have').textContent = Math.floor(S.crystals);
+    $('revive-count').textContent = '3';
+    $('revive').hidden = false;
+    $('pause-btn').hidden = true;
+  }
+
+  function doRevive() {
+    if (S.mode !== 'revive' || !canRevive()) return;
+    S.crystals -= reviveCost();
+    S.revives++;
+    S.mode = 'playing';
+    $('revive').hidden = true;
+    $('pause-btn').hidden = false; $('pause-btn').innerHTML = '&#9208;';
+    const P = S.player;
+    // back onto solid ground, wherever you died
+    let safe = null;
+    for (let i = 0; i < S.platforms.length; i++) {
+      const p = S.platforms[i];
+      if (p.x + p.w > P.x) { safe = p; break; }
+    }
+    if (safe && safe.x > P.x) P.x = safe.x + 34 * u;
+    P.y = K.groundY; P.vy = 0; P.onGround = true; P.jumps = 0; P.sliding = false;
+    P.rot = 0; P.tumble = false;
+    S.hearts = MAX_HEARTS;
+    S.invuln = 2.5;
+    S.hurtFlash = 0;
+    S.engulfedT = 0;
+    S.lavaX = P.x - 820 * u;         // the surge is blasted far behind you
+    S.lavaSurge = 0; S.lavaSurgeT = 0;
+    S.lavaNextSurge = Math.max(S.lavaNextSurge, 9);
+    S.shake = Math.max(S.shake, 10 * u);
+    S.banners.push({ text: 'RISE AGAIN!', age: 0, life: 1.5, y: H * 0.34 });
+    Sound.revive();
+    spawnBurst(P.x, P.y - K.playerH * 0.5, '#ffd15c', 30, 320);
+    checkAchievement('phoenix');
+    updateHud();
+  }
+
+  function endRun() {
     S.mode = 'gameover';
     $('hud').hidden = true;
+    $('pause-btn').hidden = true;
+    $('revive').hidden = true;
     const distance = Math.floor(S.dist);
     const crystals = Math.floor(S.crystals);
     const isNewBest = distance > S.best.distance;
@@ -605,6 +731,8 @@
     const P = S.player;
 
     if (S.mode === 'playing') {
+      if (S.invuln > 0) S.invuln = Math.max(0, S.invuln - dt);
+      if (S.hurtFlash > 0) S.hurtFlash = Math.max(0, S.hurtFlash - dt * 2.2);
       // speed: flat through the warm-up, then grows with distance; crystals boost
       const warm = clamp((S.dist - 150) / 260, 0, 1);
       S.speedBase = Math.min(S.speedBase + K.speedAccel * warm * dt, K.speedMax);
@@ -649,8 +777,8 @@
       } else if (g == null || P.y < g - 0.5) {
         P.onGround = false;
       }
-      // fell off the world
-      if (P.y > K.groundY + 120 * u) die('fall');
+      // fell off the world: costs a heart and slaps you onto the next platform
+      if (P.y > K.groundY + 120 * u) rescueFromPit();
 
       // sliding
       const wantSlide = slideHeld || keys.ArrowDown || keys.KeyS;
@@ -662,13 +790,13 @@
       const box = { x: P.x - K.playerW / 2, y: P.y - ph, w: K.playerW, h: ph };
       for (let i = 0; i < S.vents.length; i++) {
         const v = S.vents[i];
-        if (box.x < v.x + v.w && box.x + box.w > v.x && box.y + box.h > K.groundY - v.h && box.y < K.groundY) { die('vent'); break; }
+        if (box.x < v.x + v.w && box.x + box.w > v.x && box.y + box.h > K.groundY - v.h && box.y < K.groundY) { if (S.invuln <= 0) hurt('vent'); break; }
       }
       for (let i = 0; i < S.arches.length; i++) {
         const a = S.arches[i];
         const bottom = K.groundY - K.archBottom;
         const overlaps = box.x < a.x + a.w && box.x + box.w > a.x;
-        if (overlaps && box.y < bottom) { die('arch'); break; }
+        if (overlaps && box.y < bottom) { if (S.invuln <= 0) hurt('arch'); break; }
         if (!a.counted) {
           if (overlaps && P.sliding) a.sawSlide = true;
           if (box.x > a.x + a.w) { // the arch is behind us: a clean pass
@@ -710,6 +838,24 @@
           gm.baseY = gm.y;
         }
       }
+      // ember hearts: restore a heart, or pay two crystals if you're full up
+      for (let i = 0; i < S.hpickups.length; i++) {
+        const hp = S.hpickups[i];
+        if (hp.got) continue;
+        hp.y = hp.baseY + Math.sin(S.t * 2.2 + hp.phase) * 4 * u;
+        let ox = 0, oy = 0;
+        if (hp.x < box.x) ox = box.x - hp.x; else if (hp.x > box.x + box.w) ox = hp.x - (box.x + box.w);
+        if (hp.y < box.y) oy = box.y - hp.y; else if (hp.y > box.y + box.h) oy = hp.y - (box.y + box.h);
+        if (ox * ox + oy * oy < 24 * u * 24 * u) {
+          hp.got = true;
+          if (S.hearts < MAX_HEARTS) S.hearts++;
+          else S.crystals += 2;
+          Sound.heart();
+          spawnBurst(hp.x, hp.y, '#ff6a8a', 14, 190);
+          checkAchievement('warmglow');
+          updateHud();
+        }
+      }
 
       // lava
       S.lavaNextSurge -= dt;
@@ -728,6 +874,7 @@
       if (S.dist >= 1000) checkAchievement('dist1000');
       if (S.speedBase >= K.speedMax * 0.995) checkAchievement('fullspeed');
       if (gapAhead < 150 * u) checkAchievement('hotheels');
+      if (S.dist - S.hitDist >= 500) checkAchievement('untouchable');
       let lavaSpeed = S.speed * 0.955;
       if (gapAhead > K.lavaCatchUp) lavaSpeed += 55 * u;
       if (gapAhead < K.lavaMercy) lavaSpeed -= 45 * u;
@@ -758,6 +905,11 @@
         S.engulfedT += dt;
         if (S.engulfedT > 0.45) finishDeath();
       }
+    } else if (S.mode === 'revive') {
+      // the phoenix countdown — run out of nerve and the run is over
+      S.reviveT -= dt;
+      if (S.reviveT <= 0) endRun();
+      else $('revive-count').textContent = String(Math.max(1, Math.ceil(S.reviveT)));
     }
 
     // banners float up and fade
@@ -782,6 +934,10 @@
   function updateHud() {
     $('hud-dist').textContent = Math.floor(S.dist) + ' m';
     $('hud-crystals').textContent = String(S.crystals);
+    const heartsEl = $('hud-hearts');
+    let hs = '';
+    for (let i = 0; i < MAX_HEARTS; i++) hs += '<span class="h' + (i < S.hearts ? ' on' : '') + '">&#9829;</span>';
+    if (heartsEl.dataset.v !== hs) { heartsEl.innerHTML = hs; heartsEl.dataset.v = hs; }
     const bestPill = $('hud-best-pill');
     if (S.best.distance > 0) { bestPill.hidden = false; $('hud-best').textContent = S.best.distance + ' m'; }
   }
@@ -1048,6 +1204,13 @@
       drawGem(g, cam, t);
     }
 
+    // ember hearts
+    for (let i = 0; i < S.hpickups.length; i++) {
+      const h = S.hpickups[i];
+      if (h.got) continue;
+      drawHeartPickup(h, cam, t);
+    }
+
     // obstacles
     for (let i = 0; i < S.vents.length; i++) drawVent(S.vents[i], cam, t);
     for (let i = 0; i < S.arches.length; i++) drawArch(S.arches[i], cam);
@@ -1089,6 +1252,16 @@
     vg.addColorStop(1, 'rgba(20,4,8,.55)');
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, W, H);
+
+    // damage flash
+    if (S.hurtFlash > 0) {
+      const ha = clamp(S.hurtFlash, 0, 1) * 0.5;
+      const hg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.2, W / 2, H / 2, Math.max(W, H) * 0.7);
+      hg.addColorStop(0, 'rgba(255,40,20,0)');
+      hg.addColorStop(1, 'rgba(255,30,15,' + ha + ')');
+      ctx.fillStyle = hg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     function drawVolcanoLayer(off, baseY, color, amp, jag, erupting) {
       ctx.fillStyle = color;
@@ -1241,6 +1414,30 @@
       ctx.restore();
     }
 
+    function drawHeartPickup(h, cam2, time) {
+      const x = h.x - cam2;
+      if (x < -40 || x > W + 40) return;
+      const s = 10 * u;
+      ctx.save();
+      ctx.translate(x, h.y);
+      const pulse = 1 + Math.sin(time * 5 + h.phase) * 0.07;
+      ctx.scale(pulse, pulse);
+      const glow = ctx.createRadialGradient(0, 0, 1, 0, 0, s * 3.2);
+      glow.addColorStop(0, 'rgba(255,110,130,.55)');
+      glow.addColorStop(1, 'rgba(255,110,130,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(-s * 3.2, -s * 3.2, s * 6.4, s * 6.4);
+      ctx.fillStyle = '#ff5d7a';
+      ctx.beginPath();
+      ctx.moveTo(0, s * 0.85);
+      ctx.bezierCurveTo(-s * 1.5, -s * 0.1, -s * 0.85, -s * 1.2, 0, -s * 0.35);
+      ctx.bezierCurveTo(s * 0.85, -s * 1.2, s * 1.5, -s * 0.1, 0, s * 0.85);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.6)';
+      ctx.beginPath(); ctx.arc(-s * 0.35, -s * 0.45, s * 0.22, 0, 6.29); ctx.fill();
+      ctx.restore();
+    }
+
     function drawVent(v, cam2, time) {
       const x = v.x - cam2 + v.w / 2;
       if (x < -80 || x > W + 80) return;
@@ -1328,7 +1525,7 @@
       const P = S.player;
       const x = P.x - cam2;
       let pose;
-      if (S.mode === 'dying' || S.mode === 'gameover') pose = 'fall';
+      if (S.mode === 'dying' || S.mode === 'gameover' || S.mode === 'revive') pose = 'fall';
       else if (P.sliding) pose = 'slide';
       else if (!P.onGround) pose = P.vy < 0 ? 'jump' : 'fall';
       else if (S.mode === 'title') pose = 'idle';
@@ -1353,6 +1550,15 @@
         x: x, y: P.y, scale: u * (K.playerH / 44), phase: phase, pose: pose,
         rot: P.rot, idleT: S.titleBob
       });
+      // i-frames: a pulsing ember shield while you can't be hit
+      if (S.mode === 'playing' && S.invuln > 0) {
+        const sa = clamp(0.2 + 0.3 * Math.sin(time * 12), 0.08, 0.55);
+        ctx.strokeStyle = 'rgba(255,214,120,' + sa + ')';
+        ctx.lineWidth = 3 * u;
+        ctx.beginPath();
+        ctx.ellipse(x, P.y - K.playerH * 0.5, 25 * u, 33 * u, 0, 0, 6.29);
+        ctx.stroke();
+      }
       // speed streaks
       if (S.mode === 'playing' && S.speed > K.speed0 * 1.5) {
         ctx.strokeStyle = 'rgba(255,220,180,' + clamp((S.speed / K.speedMax - 0.4) * 0.5, 0, 0.3) + ')';
