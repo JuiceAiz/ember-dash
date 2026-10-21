@@ -89,6 +89,7 @@
     run: { archesSlid: 0, unlocked: [] },  // per-run counters (achievements)
     ach: {},                               // achievement id -> unlock time
     deathReason: '', dead: false, engulfedT: 0,
+    lastRun: null,               // distance/crystals of the finished run (share)
     best: { distance: 0, crystals: 0 },
     bestSource: 'you',
     saveState: 'idle', saveText: '', saveWarn: false,
@@ -616,6 +617,7 @@
     $('revive').hidden = true;
     const distance = Math.floor(S.dist);
     const crystals = Math.floor(S.crystals);
+    S.lastRun = { distance: distance, crystals: crystals };
     const isNewBest = distance > S.best.distance;
     if (isNewBest) { S.best = { distance: distance, crystals: crystals }; saveBest(); refreshTitleBest(); }
     $('result-dist').textContent = distance + ' m';
@@ -1627,6 +1629,15 @@
   $('player-sign-in').addEventListener('click', function () { window.StartNg.signIn(); });
   $('play-btn').addEventListener('click', function () { Sound.ensure(); startRun(); });
   $('again-btn').addEventListener('click', function () { Sound.ensure(); startRun(); });
+  $('share-btn').addEventListener('click', function () {
+    Sound.ensure();
+    const r = S.lastRun || { distance: Math.floor(S.dist), crystals: Math.floor(S.crystals) };
+    const text = 'I ran ' + r.distance + ' m and grabbed ' + r.crystals +
+      ' crystals in Ember Dash before the lava caught me. Beat that! \u{1F525}';
+    const page = /^https?:/.test(location.origin) ? location.origin + location.pathname : 'https://ember-dash.start.ng';
+    window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) +
+      '&url=' + encodeURIComponent(page), '_blank', 'noopener');
+  });
 
   // ---------------------------------------------------------------- boot
   loadBest();

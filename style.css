@@ -115,6 +115,8 @@ html, body {
   font-size: 16px; font-weight: 800; letter-spacing: .04em; cursor: pointer;
 }
 .ghost-btn:hover { background: rgba(64, 42, 30, .85); transform: translateY(-1px); }
+.share-btn { border-color: rgba(120, 190, 255, .5); color: #cfe8ff; }
+.share-btn:hover { background: rgba(30, 48, 72, .85); }
 
 .logo {
   font-size: clamp(44px, 11vw, 96px); font-weight: 900; letter-spacing: .04em; line-height: .95;
